@@ -6,8 +6,27 @@ import (
 	"gopkg.ilharper.com/koi/app/util"
 )
 
-func newApp(kcli *KoiCli) *cli.App {
-	return &cli.App{
+type KoiApp struct {
+	cliApp  *cli.App
+	actions map[string]func(c *cli.Context) error
+}
+
+func newApp(kcli *KoiCli) *KoiApp {
+	app := &KoiApp{}
+
+	builders := []func(kcli *KoiCli) (map[string]func(c *cli.Context) error, *cli.Command){
+		buildDaemonCommand,
+	}
+	var commands []*cli.Command
+	for _, builder := range builders {
+		commandActions, c := builder(kcli)
+		for actionName, action := range commandActions {
+			app.actions[actionName] = action
+		}
+		commands = append(commands, c)
+	}
+
+	app.cliApp = &cli.App{
 		Name:    "Koishi Desktop",
 		Usage:   "Launch Koishi from your desktop.",
 		Version: fmt.Sprintf("v%s", util.AppVersion),
@@ -39,7 +58,7 @@ func newApp(kcli *KoiCli) *cli.App {
 			cli.BashCompletionFlag,
 		},
 
-		Commands: []*cli.Command{},
+		Commands: commands,
 
 		Before: buildPreAction(kcli),
 		CommandNotFound: func(context *cli.Context, s string) {
@@ -49,4 +68,6 @@ func newApp(kcli *KoiCli) *cli.App {
 			kcli.l.Error(err)
 		},
 	}
+
+	return app
 }
