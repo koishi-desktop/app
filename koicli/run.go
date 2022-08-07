@@ -14,28 +14,58 @@ import (
 	"path/filepath"
 )
 
-func newDaemonCommand(i *do.Injector) (*cli.Command, error) {
-	do.ProvideNamed(i, "gopkg.ilharper.com/koi/app/koicli/action.DaemonRun", newDaemonRunAction)
+const (
+	serviceActionRun       = "gopkg.ilharper.com/koi/app/koicli/action.Run"
+	serviceActionRunDaemon = "gopkg.ilharper.com/koi/app/koicli/action.RunDaemon"
+)
+
+func newRunCommand(i *do.Injector) (*cli.Command, error) {
+	do.ProvideNamed(i, serviceActionRun, newRunAction)
+	do.ProvideNamed(i, serviceActionRunDaemon, newRunDaemonAction)
 
 	return &cli.Command{
-		Name:  "daemon",
-		Usage: "Manage daemon",
+		Name:   "run",
+		Usage:  "Run Koishi Desktop",
+		Action: do.MustInvokeNamed[cli.ActionFunc](i, serviceActionRun),
 		Subcommands: []*cli.Command{
 			{
-				Name:   "run",
+				Name:   "daemon",
 				Usage:  "Run daemon",
-				Action: do.MustInvokeNamed[cli.ActionFunc](i, "gopkg.ilharper.com/koi/app/koicli/action.DaemonRun"),
+				Action: do.MustInvokeNamed[cli.ActionFunc](i, serviceActionRunDaemon),
 			},
 		},
 	}, nil
 }
 
-func newDaemonRunAction(i *do.Injector) (cli.ActionFunc, error) {
-	do.Provide(i, newDaemonUnlocker)
+func newRunAction(i *do.Injector) (cli.ActionFunc, error) {
+	return func(c *cli.Context) (err error) {
+		cfg, err := do.Invoke[*config.Config](i)
+		if err != nil {
+			return
+		}
+
+		switch cfg.Data.Mode {
+		case "cli":
+			err = do.MustInvokeNamed[cli.ActionFunc](i, serviceActionRunDaemon)(c)
+			return
+		default:
+			err = fmt.Errorf("unknown mode: %s", cfg.Data.Mode)
+			return
+		}
+	}, nil
+}
+
+func newRunDaemonAction(i *do.Injector) (cli.ActionFunc, error) {
 	l := do.MustInvoke[*logger.Logger](i)
-	cfg := do.MustInvoke[*config.Config](i)
 
 	return func(c *cli.Context) (err error) {
+		do.Provide(i, newDaemonUnlocker)
+
+		cfg, err := do.Invoke[*config.Config](i)
+		if err != nil {
+			return
+		}
+
 		// Construct TCP listener
 		listener, err := net.Listen("tcp4", "localhost:")
 		if err != nil {
@@ -90,9 +120,14 @@ type daemonUnlocker struct {
 }
 
 func newDaemonUnlocker(i *do.Injector) (*daemonUnlocker, error) {
+	cfg, err := do.Invoke[*config.Config](i)
+	if err != nil {
+		return nil, err
+	}
+
 	return &daemonUnlocker{
 		l:      do.MustInvoke[*logger.Logger](i),
-		config: do.MustInvoke[*config.Config](i),
+		config: cfg,
 	}, nil
 }
 
@@ -101,4 +136,6 @@ func (unlocker *daemonUnlocker) Shutdown() error {
 	if err != nil {
 		unlocker.l.Errorf("failed to delete daemon lock: %w", err)
 	}
+	// Do not short other do.Shutdownable
+	return nil
 }

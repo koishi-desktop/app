@@ -18,6 +18,10 @@ const (
 
 func main() {
 	i := do.New()
+
+	wg := &sync.WaitGroup{}
+	do.ProvideValue(i, wg)
+
 	do.Provide(i, logger.NewConsoleTarget)
 	do.Provide(i, logger.BuildNewLogger(0))
 	do.Provide(i, koicli.NewCli)
@@ -32,7 +36,7 @@ func main() {
 		args = append(args, defaultCommand)
 	}
 
-	var c chan os.Signal
+	c := make(chan os.Signal)
 	signal.Notify(
 		c,
 		syscall.SIGTERM, // "the normal way to politely ask a program to terminate"
@@ -57,6 +61,8 @@ func main() {
 					if err != nil {
 						l.Errorf("failed to gracefully shutdown: %w", err)
 					}
+					l.Close()
+					wg.Wait()
 					os.Exit(0)
 				})
 			}(s)
@@ -64,8 +70,9 @@ func main() {
 	}()
 
 	err := do.MustInvoke[*cli.App](i).Run(args)
+	l.Close()
+	wg.Wait()
 	if err != nil {
-		l.Error(err)
 		os.Exit(1)
 	}
 }
