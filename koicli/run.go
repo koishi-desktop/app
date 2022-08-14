@@ -1,6 +1,7 @@
 package koicli
 
 import (
+	"errors"
 	"fmt"
 	"github.com/goccy/go-json"
 	"github.com/samber/do"
@@ -15,6 +16,8 @@ import (
 )
 
 const (
+	serviceCommandRun = "gopkg.ilharper.com/koi/app/koicli/command.Run"
+
 	serviceActionRun       = "gopkg.ilharper.com/koi/app/koicli/action.Run"
 	serviceActionRunDaemon = "gopkg.ilharper.com/koi/app/koicli/action.RunDaemon"
 )
@@ -72,6 +75,10 @@ func newRunDaemonAction(i *do.Injector) (cli.ActionFunc, error) {
 			return fmt.Errorf("failed to start daemon: %w", err)
 		}
 		addr := listener.Addr().String()
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return fmt.Errorf("failed to parse addr %s: %w", addr, err)
+		}
 
 		l.Debug("Writing daemon.lock...")
 		lock, err := os.OpenFile(
@@ -82,7 +89,8 @@ func newRunDaemonAction(i *do.Injector) (cli.ActionFunc, error) {
 
 		daemonLock := &god.DaemonLock{
 			Pid:  os.Getpid(),
-			Addr: addr,
+			Host: host,
+			Port: port,
 		}
 		daemonLockJson, err := json.Marshal(daemonLock)
 		if err != nil {
@@ -101,13 +109,16 @@ func newRunDaemonAction(i *do.Injector) (cli.ActionFunc, error) {
 		daemon := god.NewDaemon(i)
 
 		mux := http.NewServeMux()
-		mux.Handle("/api", daemon.Handler)
+		mux.Handle(god.DaemonEndpoint, daemon.Handler)
 
 		server := &http.Server{Addr: addr, Handler: mux}
+		do.ProvideValue(i, server)
 		l.Debug("Serving daemon...")
 		err = server.Serve(listener)
-		if err != nil {
-			return fmt.Errorf("daemon closed: %w", err)
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		} else {
+			err = fmt.Errorf("daemon closed: %w", err)
 		}
 
 		return
