@@ -23,16 +23,19 @@ func main() {
 
 	do.ProvideNamedValue(i, coreUtil.ServiceAppVersion, util.AppVersion)
 
-	do.Provide(i, logger.NewConsoleTarget)
+	wg := &sync.WaitGroup{}
+	do.ProvideValue(i, wg)
+
+	do.Provide(i, logger.BuildNewKoiFileTarget(os.Stderr))
 	do.Provide(i, logger.BuildNewLogger(0))
 	receiver := rpl.NewReceiver()
 	receiver.ChOffset = 100
 	// Use ProvideValue() here because x/rpl didn't provide a do ctor
-	do.ProvideValue(i, &receiver)
+	do.ProvideValue(i, receiver)
 	do.Provide(i, koicli.NewCli)
 
 	l := do.MustInvoke[*logger.Logger](i)
-	consoleTarget := do.MustInvoke[*logger.ConsoleTarget](i)
+	consoleTarget := do.MustInvoke[*logger.KoiFileTarget](i)
 	receiver.Register(consoleTarget)
 	l.Register(consoleTarget)
 
@@ -69,6 +72,7 @@ func main() {
 						l.Errorf("failed to gracefully shutdown: %w", err)
 					}
 					l.Close()
+					wg.Wait()
 					os.Exit(0)
 				})
 			}(s)
@@ -77,6 +81,7 @@ func main() {
 
 	err := do.MustInvoke[*cli.App](i).Run(args)
 	l.Close()
+	wg.Wait()
 	if err != nil {
 		os.Exit(1)
 	}
