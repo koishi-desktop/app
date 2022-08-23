@@ -47,13 +47,12 @@ func main() {
 		args = append(args, defaultCommand)
 	}
 
-	c := make(chan os.Signal)
+	c := make(chan os.Signal, 1)
 	signal.Notify(
 		c,
 		syscall.SIGTERM, // "the normal way to politely ask a program to terminate"
 		syscall.SIGINT,  // Ctrl-C
 		syscall.SIGQUIT, // Ctrl-\
-		syscall.SIGKILL, // May not be caught
 		syscall.SIGHUP,  // Terminal disconnected. SIGHUP also needs gracefully terminating
 	)
 	go func() {
@@ -70,7 +69,7 @@ func main() {
 					l.Debugf("Received signal %s. Gracefully shutting down", sig)
 					err := i.Shutdown()
 					if err != nil {
-						l.Errorf("failed to gracefully shutdown: %w", err)
+						l.Errorf("failed to gracefully shutdown: %s", err)
 					}
 					l.Close()
 					wg.Wait()
@@ -83,7 +82,7 @@ func main() {
 	err := do.MustInvoke[*cli.App](i).Run(args)
 	shutdownErr := i.Shutdown()
 	if shutdownErr != nil {
-		l.Errorf("failed to gracefully shutdown: %w", err)
+		l.Errorf("failed to gracefully shutdown: %s", err)
 	}
 	l.Close()
 	wg.Wait()
