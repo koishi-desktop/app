@@ -1,15 +1,14 @@
+//nolint:wrapcheck
 package koicli
 
 import (
 	"errors"
 	"fmt"
 
-	"github.com/goccy/go-json"
 	"github.com/mitchellh/mapstructure"
 	"github.com/samber/do"
 	"github.com/urfave/cli/v2"
 	"gopkg.ilharper.com/koi/core/god/proto"
-	"gopkg.ilharper.com/koi/core/koicmd"
 	"gopkg.ilharper.com/koi/core/koiconfig"
 	"gopkg.ilharper.com/koi/core/logger"
 	"gopkg.ilharper.com/koi/sdk/client"
@@ -17,35 +16,36 @@ import (
 )
 
 const (
-	serviceCommandPs = "gopkg.ilharper.com/koi/app/koicli/command.Ps"
-	serviceActionPs  = "gopkg.ilharper.com/koi/app/koicli/action.Ps"
+	serviceCommandYarn = "gopkg.ilharper.com/koi/app/koicli/command.Yarn"
+	serviceActionYarn  = "gopkg.ilharper.com/koi/app/koicli/action.Yarn"
 )
 
-func newPsCommand(i *do.Injector) (*cli.Command, error) {
-	do.ProvideNamed(i, serviceActionPs, newPsAction)
+func newYarnCommand(i *do.Injector) (*cli.Command, error) {
+	do.ProvideNamed(i, serviceActionYarn, newYarnAction)
 
 	return &cli.Command{
-		Name:   "ps",
-		Usage:  "Show Process Status",
-		Action: do.MustInvokeNamed[cli.ActionFunc](i, serviceActionPs),
+		Name:      "yarn",
+		Usage:     "Run Yarn Command on Instance",
+		ArgsUsage: "args",
+		Action:    do.MustInvokeNamed[cli.ActionFunc](i, serviceActionYarn),
 
 		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:    "all",
-				Aliases: []string{"a"},
-				Usage:   "Including stopped instances",
+			&cli.StringFlag{
+				Name:    "instance",
+				Aliases: []string{"name", "n"},
+				Usage:   "Target Instance",
 			},
 		},
 	}, nil
 }
 
-func newPsAction(i *do.Injector) (cli.ActionFunc, error) {
+func newYarnAction(i *do.Injector) (cli.ActionFunc, error) {
 	l := do.MustInvoke[*logger.Logger](i)
 
 	return func(c *cli.Context) error {
 		var err error
 
-		l.Debug("Trigger action: ps")
+		l.Debug("Trigger action: yarn")
 
 		cfg, err := do.Invoke[*koiconfig.Config](i)
 		if err != nil {
@@ -55,15 +55,16 @@ func newPsAction(i *do.Injector) (cli.ActionFunc, error) {
 		manager := manage.NewKoiManager(cfg.Computed.Exe, cfg.Computed.DirLock)
 		conn, err := manager.Ensure()
 		if err != nil {
-			return fmt.Errorf("failed to get daemon connection: %w", err)
+			return err
 		}
 
-		respC, logC, err := client.Ps(
+		respC, logC, err := client.Yarn(
 			conn,
-			c.Bool("all"),
+			c.String("instance"),
+			c.Args().Slice(),
 		)
 		if err != nil {
-			return fmt.Errorf("failed to process command ps: %w", err)
+			return err
 		}
 
 		logger.LogChannel(i, logC)
@@ -94,24 +95,6 @@ func newPsAction(i *do.Injector) (cli.ActionFunc, error) {
 			return errors.New(s)
 		}
 
-		var resultPs koicmd.ResultPs
-		err = mapstructure.Decode(result.Data, &resultPs)
-		if err != nil {
-			return fmt.Errorf("failed to parse result %#+v: %w", result, err)
-		}
-
-		resultPsInstanceJSON, err := json.Marshal(resultPs)
-		if err != nil {
-			return fmt.Errorf("failed to marshal result %#+v: %w", resultPs, err)
-		}
-
-		fmt.Println(string(resultPsInstanceJSON))
-
-		err = logger.Wait(respC)
-		if err != nil {
-			return fmt.Errorf("failed to process command ps: %w", err)
-		}
-
-		return nil
+		return logger.Wait(respC)
 	}, nil
 }

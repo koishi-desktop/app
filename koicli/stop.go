@@ -1,3 +1,4 @@
+//nolint:wrapcheck
 package koicli
 
 import (
@@ -17,35 +18,28 @@ import (
 )
 
 const (
-	serviceCommandPs = "gopkg.ilharper.com/koi/app/koicli/command.Ps"
-	serviceActionPs  = "gopkg.ilharper.com/koi/app/koicli/action.Ps"
+	serviceCommandStop = "gopkg.ilharper.com/koi/app/koicli/command.Stop"
+	serviceActionStop  = "gopkg.ilharper.com/koi/app/koicli/action.Stop"
 )
 
-func newPsCommand(i *do.Injector) (*cli.Command, error) {
-	do.ProvideNamed(i, serviceActionPs, newPsAction)
+func newStopCommand(i *do.Injector) (*cli.Command, error) {
+	do.ProvideNamed(i, serviceActionStop, newStopAction)
 
 	return &cli.Command{
-		Name:   "ps",
-		Usage:  "Show Process Status",
-		Action: do.MustInvokeNamed[cli.ActionFunc](i, serviceActionPs),
-
-		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:    "all",
-				Aliases: []string{"a"},
-				Usage:   "Including stopped instances",
-			},
-		},
+		Name:      "stop",
+		Usage:     "Stop Instances",
+		ArgsUsage: "instances",
+		Action:    do.MustInvokeNamed[cli.ActionFunc](i, serviceActionStop),
 	}, nil
 }
 
-func newPsAction(i *do.Injector) (cli.ActionFunc, error) {
+func newStopAction(i *do.Injector) (cli.ActionFunc, error) {
 	l := do.MustInvoke[*logger.Logger](i)
 
 	return func(c *cli.Context) error {
 		var err error
 
-		l.Debug("Trigger action: ps")
+		l.Debug("Trigger action: stop")
 
 		cfg, err := do.Invoke[*koiconfig.Config](i)
 		if err != nil {
@@ -55,15 +49,15 @@ func newPsAction(i *do.Injector) (cli.ActionFunc, error) {
 		manager := manage.NewKoiManager(cfg.Computed.Exe, cfg.Computed.DirLock)
 		conn, err := manager.Ensure()
 		if err != nil {
-			return fmt.Errorf("failed to get daemon connection: %w", err)
+			return err
 		}
 
-		respC, logC, err := client.Ps(
+		respC, logC, err := client.Stop(
 			conn,
-			c.Bool("all"),
+			c.Args().Slice(),
 		)
 		if err != nil {
-			return fmt.Errorf("failed to process command ps: %w", err)
+			return err
 		}
 
 		logger.LogChannel(i, logC)
@@ -112,6 +106,6 @@ func newPsAction(i *do.Injector) (cli.ActionFunc, error) {
 			return fmt.Errorf("failed to process command ps: %w", err)
 		}
 
-		return nil
+		return logger.Wait(respC)
 	}, nil
 }
