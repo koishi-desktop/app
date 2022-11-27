@@ -2,6 +2,7 @@ package koicli
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,18 +24,18 @@ const (
 func newPreAction(i *do.Injector) (cli.BeforeFunc, error) {
 	l := do.MustInvoke[*logger.Logger](i)
 	p := do.MustInvoke[*message.Printer](i)
-	consoleTarget := do.MustInvoke[*logger.KoiFileTarget](i)
+	consoleTarget := do.MustInvokeNamed[*logger.KoiFileTarget](i, logger.ServiceConsoleTarget)
 
 	return func(c *cli.Context) error {
 		l.Debug(p.Sprintf("Trigger pseudo action: pre"))
-		l.Debug(p.Sprintf("You're seeing debug output because you have a RPL target running in debug mode. This will not be controlled by --debug flag."))
+		l.Debug(p.Sprintf("You're seeing debug output because this RPL target is running in debug mode (which is normal for syslog). This will not be controlled by --debug flag."))
 
 		if c.Bool("debug") {
 			consoleTarget.Level = rpl.LevelDebug
 			l.Debug(p.Sprintf("--debug flag detected - debug mode enabled."))
 		}
 
-		l.Debug(p.Sprintf("PID: %d", os.Getpid()))
+		l.Debug(p.Sprintf("PID: %s", fmt.Sprintf("%d", os.Getpid())))
 		exe, err := os.Executable()
 		if err != nil {
 			return errors.New(p.Sprintf("failed to get executable: %v", err))
